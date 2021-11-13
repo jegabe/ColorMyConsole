@@ -12,7 +12,7 @@ class ColorMyConsole(ConanFile):
     description = "TODO"
     settings = "os", "compiler", "build_type", "arch"
     generators = "cmake"
-    exports_sources = "CMakeLists.txt", "include*", "src*", "LICENSE.txt"
+    exports_sources = "CMakeLists.txt", "include*", "src*", "tests*", "LICENSE.txt"
     no_copy_source=True
 
     def configure_cmake(self):
