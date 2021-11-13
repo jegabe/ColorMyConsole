@@ -8,6 +8,14 @@
 
 #include <colmc/push_warnings.h>
 
+// In raw input mode (see setup.h), key presses are not echoed on the terminal
+// but the programmer has full freedom about interpreting the pressed keys.
+// Also, special keys normally not available on stdin (like arrow keys)
+// can be used. The two API functions colmc::key_pressed() and colmc::get_key()
+// are used in that mode.
+// The mode is particular useful for implementing text-based GUIs or games running
+// on the terminal/console.
+
 namespace colmc {
 
 //! \brief Enumeration of special keys not representable

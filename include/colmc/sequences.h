@@ -90,8 +90,7 @@ inline std::string backward(int n) {
 	return oss.str();
 }
 
-enum class clear_screen_mode: int
-{
+enum class clear_screen_mode: int {
 	from_cursor_to_end_of_screen   = 0,
 	from_begin_of_screen_to_cursor = 1,
 	entire_screen                  = 2
@@ -103,8 +102,7 @@ inline std::string clear_screen(clear_screen_mode mode = clear_screen_mode::enti
 	return oss.str();
 }
 
-enum class clear_line_mode: int
-{
+enum class clear_line_mode: int {
 	from_cursor_to_end_of_line   = 0,
 	from_begin_of_line_to_cursor = 1,
 	entire_line                  = 2
