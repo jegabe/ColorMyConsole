@@ -9,7 +9,6 @@
 #include <iostream>
 #include <cstdlib>
 #include <vector>
-#include <algorithm>
 #include <unordered_map>
 #include <memory>
 #include <mutex>
@@ -151,10 +150,10 @@ protected:
 			}
 			else {
 				if (!style_stack.empty()) {
-					style_stack.resize(style_stack.size() - 1u);
+					style_stack.resize(style_stack.size() - 1u); // pop off stack
 				}
 				if (!style_stack.empty()) {
-					sequence += styles[style_stack.back()];
+					sequence += styles[style_stack.back()]; // restore last style
 				}
 			}
 			const auto num_of_chars_before = num_of_chars;
@@ -215,14 +214,6 @@ protected:
 			--num_of_chars;
 			continue;
 		}
-	}
-
-	std::size_t count_until_esc(const char* p, std::size_t n) const {
-		std::size_t i = 0;
-		while((i < n) && (p[i] != esc)) {
-			++i;
-		}
-		return i;
 	}
 
 	bool handle_esc_sequence(const char* p, std::size_t n) {
