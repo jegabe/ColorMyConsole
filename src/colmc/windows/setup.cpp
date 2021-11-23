@@ -31,7 +31,6 @@ constexpr std::size_t min_buf_size = 16u;
 constexpr std::size_t parsed_params_capacity = 4u;
 constexpr std::size_t default_buf_size = 256u;
 constexpr std::size_t buf_growth = 256u;
-constexpr char esc = '\x1B';
 bool is_setup = false;
 bool stdout_redirected = false;
 bool win_utf8 = false;

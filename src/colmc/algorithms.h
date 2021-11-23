@@ -11,6 +11,7 @@ namespace colmc {
 constexpr std::size_t invalid_end_of_sequence = 0;
 constexpr std::size_t max_style_seq_len = 16u;
 constexpr std::size_t no_pos = std::numeric_limits<std::size_t>::max();
+constexpr char esc = '\x1B';
 
 inline void replace_content(std::vector<char>& buf, std::size_t& num_used_bytes, std::size_t offset, std::size_t len, const char* replacement, std::size_t replacement_len, std::size_t growth_increment) {
 	if (replacement_len == len) {
@@ -75,6 +76,13 @@ inline std::size_t find_end_of_style_sequence(const char* p, std::size_t n) {
 	return invalid_end_of_sequence;
 }
 
+inline std::size_t count_until_esc(const char* p, std::size_t n) {
+	std::size_t i = 0;
+	while((i < n) && (p[i] != esc)) {
+		++i;
+	}
+	return i;
+}
 
 }
 
