@@ -3,13 +3,16 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define VC_EXTRALEAN
+#define NOMINMAX
 
 #include <streambuf>
 #include <iostream>
 #include <cstdlib>
 #include <vector>
 #include <algorithm>
+#include <unordered_map>
 #include <memory>
+#include <mutex>
 #include <cassert>
 #include <Windows.h>
 #include <io.h> 
@@ -18,6 +21,9 @@
 #include <colmc/setup.h>
 #include <colmc/raw_input.h>
 #include <colmc/term_size.h>
+#include <colmc/algorithms.h>
+
+using namespace colmc;
 
 namespace {
 
@@ -25,11 +31,11 @@ constexpr std::size_t min_buf_size = 16u;
 constexpr std::size_t parsed_params_capacity = 4u;
 constexpr std::size_t default_buf_size = 256u;
 constexpr std::size_t buf_growth = 256u;
-constexpr std::size_t invalid_end_of_sequence = 0;
 constexpr char esc = '\x1B';
 bool is_setup = false;
 bool stdout_redirected = false;
 bool win_utf8 = false;
+bool allow_styles = false;
 int old_cin_mode = -1;
 int old_cout_mode = -1;
 std::unique_ptr<std::basic_streambuf<char>> cout_buf;
@@ -40,6 +46,9 @@ HANDLE h_console = nullptr;
 CONSOLE_SCREEN_BUFFER_INFO initial_console_settings;
 DWORD old_console_mode = 0;
 bool raw_input_mode = false;
+std::unordered_map<std::string, std::string> styles;
+std::vector<std::string> style_stack;
+std::mutex style_mutex;
 
 bool is_stdout_redirected() {
 	DWORD temp;
@@ -101,10 +110,73 @@ protected:
 		base::setp(m_buf.data(), m_buf.data() + m_buf.size() - 1u); // -1u so that overflow() can put the next char before handle()
 	}
 
+	void handleStyleTags(std::size_t& num_of_chars) {
+		std::unique_lock<std::mutex> lock{style_mutex};
+		std::size_t n = num_of_chars;
+		std::size_t i = 0;
+		while(n > 0) {
+			const char* p = m_buf.data() + i;
+			const std::size_t pos = index_of(p, '<', n);
+			if (pos == no_pos) {
+				break; // all style tags handled, job finished
+			}
+			const std::size_t remaining = (n - pos);
+			if (remaining < 3) { // 3: minimum a '<', then a single char or '/', then '>
+				i += (pos + 1);
+				n -= (pos + 1);
+				continue;
+			}
+			std::size_t end = find_end_of_style_sequence(p + pos, remaining);
+			if (end == invalid_end_of_sequence) { // it wasn't a sequence but a regular '>' or '<' inside text...
+				i += (pos + 1);
+				n -= (pos + 1);
+				continue;
+			}
+			end += pos; // convert relative end to absolute end
+			assert(p[pos] == '<');
+			assert(p[end-1] == '>');
+			// [pos, end) is the range of the style tag
+			const bool is_end_style = ((end-pos) > 2) && (p[pos+1] == '/');
+			std::string sequence = "\x1B[0m"; // reset style sequence
+			if (!is_end_style) {
+				const auto key = std::string{p + pos + 1, end - pos - 2 };
+				const auto style = styles.find(key);
+				if (style == styles.end()) {
+					++p;
+					--n;
+					continue;
+				}
+				sequence += style->second;
+				style_stack.push_back(key);
+			}
+			else {
+				if (!style_stack.empty()) {
+					style_stack.resize(style_stack.size() - 1u);
+				}
+				if (!style_stack.empty()) {
+					sequence += styles[style_stack.back()];
+				}
+			}
+			const auto num_of_chars_before = num_of_chars;
+			colmc::replace_content(m_buf, num_of_chars, i + pos, end-pos, sequence.c_str(), sequence.size(), buf_growth);
+			if (num_of_chars > num_of_chars_before) {
+				n += (num_of_chars - num_of_chars_before);
+			}
+			else {
+				n -= (num_of_chars_before - num_of_chars);
+			}
+			i += (pos + sequence.size()); // continue searching after the pasted sequence in m_buf
+			n -= (pos + sequence.size());
+		}
+	}
+
 	void handle(std::size_t num_of_chars) {
+		if (allow_styles) {
+			handleStyleTags(num_of_chars);
+		}
 		const char* begin = m_buf.data();
 		while (num_of_chars > 0) {
-			std::size_t n = count_until_special_char(begin, num_of_chars);
+			std::size_t n = count_until_esc(begin, num_of_chars);
 			if (n > 0) {
 				output(begin, n);
 				begin += n;
@@ -123,7 +195,7 @@ protected:
 						num_of_chars -= n;
 						continue;
 					}
-					if (!handle_sequence(begin, n)) {
+					if (!handle_esc_sequence(begin, n)) {
 						// something is wrong with the sequence
 						output(begin, n);
 					}
@@ -145,7 +217,7 @@ protected:
 		}
 	}
 
-	std::size_t count_until_special_char(const char* p, std::size_t n) const {
+	std::size_t count_until_esc(const char* p, std::size_t n) const {
 		std::size_t i = 0;
 		while((i < n) && (p[i] != esc)) {
 			++i;
@@ -153,18 +225,7 @@ protected:
 		return i;
 	}
 
-	std::size_t find_end_of_esc_sequence(const char* p, std::size_t n) const {
-		std::size_t i = 2u; // after esc[
-		while((i < n) && (((p[i] >= '0') && (p[i] <= '9')) || (p[i] == ';'))) { // jump over the command parameters
-			++i;
-		}
-		if ((i < n) && (((p[i] >= 'a') && (p[i] <= 'z')) || ((p[i] >= 'A') && (p[i] <= 'Z')))) {
-			return i + 1u; // well formed sequence with alpha [A-Za-z] ending
-		}
-		return invalid_end_of_sequence;
-	}
-
-	bool handle_sequence(const char* p, std::size_t n) {
+	bool handle_esc_sequence(const char* p, std::size_t n) {
 		m_parsed_params.resize(0);
 		assert(n > 3u);
 		p += 2u; // after esc [
@@ -559,6 +620,7 @@ void setup(config cfg) {
 			cout_buf = std::make_unique<ostreambuf_to_cout>(default_buf_size);
 			old_cout_buf = std::cout.rdbuf(cout_buf.get());
 		}
+		allow_styles = cfg.allow_styles;
 	}
 	std::atexit(teardown);
 	is_setup = true;
@@ -586,6 +648,7 @@ void teardown() {
 		std::memset(&initial_console_settings, 0, sizeof(initial_console_settings));
 		::SetConsoleMode(h_console, old_console_mode);
 	}
+	allow_styles = false;
 	h_console = nullptr;
 	stdout_redirected = false;
 	raw_input_mode = false;
@@ -651,6 +714,45 @@ terminal_size estimate_terminal_size(const terminal_size& default_if_not_gettabl
 		result.columns = static_cast<int>(info.srWindow.Right - info.srWindow.Left + 1);
 		result.rows = static_cast<int>(info.srWindow.Bottom - info.srWindow.Top + 1);
 	}
+	return result;
+}
+
+bool add_style(const std::string& tag_name, const std::string& escape_sequence) {
+	for (const auto c: tag_name) {
+		if (!(((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')) || (c == '_'))) {
+			return false;
+		}
+	}
+	std::unique_lock<std::mutex> lock{style_mutex};
+	if (styles.find(tag_name) != styles.end()) { // already exists
+		return false;
+	}
+	styles[tag_name] = escape_sequence;
+	return true;
+}
+
+bool remove_style(const std::string& tag_name) {
+	std::unique_lock<std::mutex> lock{style_mutex};
+	const auto style = styles.find(tag_name);
+	if (style != styles.end()) {
+		styles.erase(style);
+		return true;
+	}
+	return false;
+}
+std::string get_style(const std::string& tag_name) {
+	std::unique_lock<std::mutex> lock{style_mutex};
+	std::string result;
+	const auto style = styles.find(tag_name);
+	if (style != styles.end()) {
+		result = style->second;
+	}
+	return result;
+}
+
+std::vector<std::string> get_current_style_stack() {
+	std::unique_lock<std::mutex> lock{style_mutex};
+	std::vector<std::string> result = style_stack;
 	return result;
 }
 

@@ -14,6 +14,7 @@ set(SOURCES
 	include/colmc/sequences.h
 	include/colmc/setup.h
 	include/colmc/term_size.h
+	src/colmc/algorithms.h
 	src/colmc/posix/setup.cpp
 	src/colmc/windows/setup.cpp
 )
