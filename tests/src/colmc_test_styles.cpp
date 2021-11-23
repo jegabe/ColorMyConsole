@@ -11,7 +11,7 @@ int main() {
 	colmc::setup(cfg);
 	colmc::add_style("red", colmc::fore::red);
 	colmc::add_style("green_on_blue", std::string{colmc::back::blue} + colmc::fore::green);
-	std::cout << "Normal <red> Red <green_on_blue> GreenOnBlue </> Red </> Normal" << std::endl;
+	std::cout << "Normal <red> Red <green_on_blue> GreenOnBlue <unknown> Unknown </> GreenOnBlue </> Red </> Normal" << std::endl;
 	std::cout << "Normal '<' signs cannot harm." << std::endl;
 	std::cin.get();
 	return 0;

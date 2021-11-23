@@ -142,11 +142,12 @@ protected:
 				const auto key = std::string{p + pos + 1, end - pos - 2 };
 				const auto style = styles.find(key);
 				if (style == styles.end()) {
-					++p;
-					--n;
-					continue;
+					sequence = ""; // don't change style for unknown styles
 				}
-				sequence += style->second;
+				else
+				{
+					sequence += style->second;
+				}
 				style_stack.push_back(key);
 			}
 			else {
